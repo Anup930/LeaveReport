@@ -78,37 +78,6 @@ async function boot() {
 }
 
 // ============ DASHBOARD ============
-// async function loadDashboard() {
-//   const wrap = document.getElementById('dashboardBody');
-//   wrap.innerHTML = '<div class="empty-state">Loading compliance dataâ€¦</div>';
-//   try {
-//     const d = await API.getDashboard(state.date);
-//     state.dashboard = d;
-//     state.selected.clear();
-//     renderKpis(d.summary);
-//     renderSections(d);
-//   } catch (e) {
-//     wrap.innerHTML = '<div class="empty-state">Failed to load: ' + e.message + '</div>';
-//   }
-// }
-
-// function renderKpis(s) {
-//   const box = document.getElementById('kpiRow');
-//   const items = [
-//     ['Active Employees', s.totalActive, 'var(--ink-dim)'],
-//     ['Pending Compliance', s.pending, 'var(--red)'],
-//     ['Resolved Today', s.resolved, 'var(--accent)'],
-//     ['Present', s.present, 'var(--green)'],
-//     ['On Leave', s.onLeave, 'var(--purple)'],
-//     ['Week Off', s.weekOff, 'var(--slate)']
-//   ];
-//   box.innerHTML = items.map(([l, n, c]) =>
-//     `<div class="kpi" style="--rail:${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`
-//   ).join('');
-// }
-
-
-// ============ DASHBOARD ============
 async function loadDashboard() {
   const wrap = document.getElementById('dashboardBody');
   wrap.innerHTML = '<div class="empty-state">Loading compliance data…</div>';
@@ -117,7 +86,6 @@ async function loadDashboard() {
     state.dashboard = d;
     state.selected.clear();
     
-    // Yahan sirf d.summary ki jagah pura 'd' pass kar rahe hain
     renderKpis(d); 
     renderSections(d);
   } catch (e) {
@@ -129,32 +97,26 @@ function renderKpis(d) {
   const box = document.getElementById('kpiRow');
   const s = d.summary;
 
-  // 1. Pehle 3 fixed cards jo humesha dikhenge
   const items = [
     ['Active Employees', s.totalActive, 'var(--ink-dim)'],
     ['Pending Compliance', s.pending, 'var(--red)'],
     ['Resolved Today', s.resolved, 'var(--accent)']
   ];
 
-  // 2. Col G (Status) se unique values aur unka count nikalna
   const statusCounts = {};
   d.all.forEach(r => {
-    if (r.Status) { // Sirf unhe count karenge jinka status assigned hai
+    if (r.Status) { 
       statusCounts[r.Status] = (statusCounts[r.Status] || 0) + 1;
     }
   });
 
-  // 3. Dynamic cards ko items array mein append karna
   Object.keys(statusCounts).sort().forEach(st => {
-    // STATUS_META se color aur label uthayega, agar nahi mila to default set karega
     const meta = STATUS_META[st] || { label: st, color: 'var(--slate)' };
     items.push([meta.label, statusCounts[st], meta.color]);
   });
 
-  // 4. CSS Grid ko dynamically adjust karna taaki naye cards fit ho sakein
   box.style.gridTemplateColumns = `repeat(auto-fit, minmax(180px, 1fr))`;
 
-  // 5. Final HTML render karna
   box.innerHTML = items.map(([l, n, c]) =>
     `<div class="kpi" style="--rail:${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`
   ).join('');
@@ -341,7 +303,6 @@ function handleFileSelect(file) {
       const ws = wb.Sheets[sheetName];
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // find header row containing "Employee Id"
       let headerIdx = raw.findIndex(r => r.some(c => String(c).trim().toLowerCase() === 'employee id'));
       if (headerIdx === -1) { toast('Could not find "Employee Id" header in this file', true); return; }
       const headers = raw[headerIdx].map(h => String(h).trim().toLowerCase());
@@ -385,7 +346,7 @@ async function confirmUpload() {
   if (!date) return toast('Pick a date first', true);
   if (!window._parsedRows || !window._parsedRows.length) return toast('Upload a valid file first', true);
   const btn = document.getElementById('uploadConfirmBtn');
-  btn.disabled = true; btn.textContent = 'Importingâ€¦';
+  btn.disabled = true; btn.textContent = 'Importing…';
   try {
     const res = await API.uploadLoginReport(date, window._parsedRows, state.user.displayName);
     toast('Imported ' + res.rowsImported + ' records for ' + date);
@@ -485,33 +446,209 @@ async function populateEmpDropdown(elId) {
     state.empMaster.filter(e => e.Status === 'Active').map(e => `<option value="${e.EmpID}">${escapeHtml(e.Name)} (#${e.EmpID})</option>`).join('');
 }
 
-// ============ TRENDS TAB ============
+// ============ TRENDS TAB (ADVANCED) ============
+let trendLineChartInstance = null;
+let trendPieChartInstance = null;
+let trendColChartInstance = null;
+let wfhChartInstance = null;
+
+// Helper to format those long GMT dates to clean DD-MM-YYYY
+function cleanDate(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return String(dateStr).substring(0, 10);
+  return pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + d.getFullYear();
+}
+
 async function loadTrendsTab() {
   const to = state.date;
-  const fromD = new Date(state.date); fromD.setDate(fromD.getDate() - 13);
+  const fromD = new Date(state.date); fromD.setDate(fromD.getDate() - 30);
   const from = fromD.getFullYear() + '-' + pad(fromD.getMonth() + 1) + '-' + pad(fromD.getDate());
   document.getElementById('trendFrom').value = from;
   document.getElementById('trendTo').value = to;
   await refreshTrends();
 }
+
 async function refreshTrends() {
   const from = document.getElementById('trendFrom').value;
   const to = document.getElementById('trendTo').value;
-  const [trends, chronic] = await Promise.all([API.getTrends(from, to), API.getChronicOffenders(14, 3)]);
+  const [trends, chronic] = await Promise.all([API.getTrends(from, to), API.getChronicOffenders(30, 3)]);
 
-  const byEntity = trends.byEntity;
-  const maxTotal = Math.max(1, ...byEntity.map(e => e.total));
-  document.getElementById('entityBars').innerHTML = byEntity.map(e => `
-    <div class="bar-row">
-      <div class="bar-label">${escapeHtml(e.entity)}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${(e.present / Math.max(1,e.total) * 100).toFixed(0)}%"></div></div>
-      <div class="bar-val">${e.present}/${e.total}</div>
-    </div>`).join('') || '<div class="empty-state">No data in this range.</div>';
+  let totalRecords = 0, totalPresentGroup = 0, totalAbsentGroup = 0, totalWfh = 0;
+  
+  trends.byDate.forEach(d => {
+    totalRecords += d.total;
+    // Present = P + HD + WFH
+    totalPresentGroup += (d.present + d.hd + d.wfh); 
+    // Absent = WO + Leave + Absent + Missing
+    totalAbsentGroup += (d.wo + d.leave + d.absent + d.pendingUnresolved); 
+    totalWfh += d.wfh;
+  });
+
+  const presentRate = totalRecords ? ((totalPresentGroup / totalRecords) * 100).toFixed(1) : 0;
+
+  // Render KPIs
+  document.getElementById('trendKpis').innerHTML = `
+    <div class="kpi" style="--rail:var(--blue)"><div class="n">${totalRecords}</div><div class="l">Total Tracked Days</div></div>
+    <div class="kpi" style="--rail:var(--green)"><div class="n">${presentRate}%</div><div class="l">Avg Present Rate</div></div>
+    <div class="kpi" style="--rail:var(--red)"><div class="n">${totalAbsentGroup}</div><div class="l">Total Absences & Leaves</div></div>
+    <div class="kpi" style="--rail:var(--amber)"><div class="n">${totalWfh}</div><div class="l">Total WFH</div></div>
+  `;
+
+  // Render all UI components
+  renderCharts(trends.byDate);
+  renderDetailedTable(trends.byDate);
+  renderProgressBars('entityBars', trends.byEntity, 'entity');
 
   const chronicBox = document.getElementById('chronicList');
-  chronicBox.innerHTML = chronic.length ? `<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Entity</th><th>Unresolved / Absent (14d)</th></tr></thead><tbody>` +
-    chronic.map(c => `<tr><td>${escapeHtml(c.name)} <span style="color:var(--ink-faint)">#${c.empId}</span></td><td>${escapeHtml(c.entity)}</td><td><span class="badge" style="--c:var(--red)">${c.count}</span></td></tr>`).join('') +
+  chronicBox.innerHTML = chronic.length ? `<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Entity</th><th>Absences (Count)</th></tr></thead><tbody>` +
+    chronic.map(c => `<tr><td>${escapeHtml(c.name)} <span style="color:var(--ink-faint)">#${c.empId}</span></td><td>${escapeHtml(c.entity)}</td><td><span class="badge" style="--c:var(--red)">${c.count} Times</span></td></tr>`).join('') +
     '</tbody></table></div>' : '<div class="empty-state">No chronic offenders in this window. 🎉</div>';
+}
+
+function renderCharts(byDateData) {
+  if(trendLineChartInstance) trendLineChartInstance.destroy();
+  if(trendPieChartInstance) trendPieChartInstance.destroy();
+  if(trendColChartInstance) trendColChartInstance.destroy();
+  if(wfhChartInstance) wfhChartInstance.destroy();
+
+  // CLEAN DATES FOR X-AXIS
+  const labels = byDateData.map(d => cleanDate(d.date).substring(0, 5)); // DD-MM for charts
+
+  const presentData = byDateData.map(d => d.present + d.hd + d.wfh);
+  const absentData = byDateData.map(d => d.wo + d.leave + d.absent + d.pendingUnresolved);
+  const wfhData = byDateData.map(d => d.wfh);
+
+  Chart.defaults.color = '#8B93A7';
+  Chart.defaults.font.family = 'Manrope';
+  const gridOptions = { color: '#232938' };
+
+  // 1. LINE CHART (Present vs Absent)
+  const ctxLine = document.getElementById('trendLineChart').getContext('2d');
+  trendLineChartInstance = new Chart(ctxLine, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Present (P, HD, WFH)', data: presentData, borderColor: '#3DD68C', backgroundColor: 'rgba(61, 214, 140, 0.1)', fill: true, tension: 0.3 },
+        { label: 'Absent (WO, Leave, A, Miss)', data: absentData, borderColor: '#F2495C', backgroundColor: 'transparent', tension: 0.3 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: gridOptions }, x: { grid: { display: false } } } }
+  });
+
+  // 2. PIE CHART
+  const totalP = presentData.reduce((a,b)=>a+b, 0);
+  const totalA = absentData.reduce((a,b)=>a+b, 0);
+  const ctxPie = document.getElementById('trendPieChart').getContext('2d');
+  trendPieChartInstance = new Chart(ctxPie, {
+    type: 'doughnut',
+    data: {
+      labels: ['Present Group', 'Absent Group'],
+      datasets: [{ data: [totalP, totalA], backgroundColor: ['#3ED9C6', '#F2495C'], borderWidth: 0 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' } } }
+  });
+
+  // 3. COLUMN CHART (Present vs Absent Bars)
+  const ctxCol = document.getElementById('trendColChart').getContext('2d');
+  trendColChartInstance = new Chart(ctxCol, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Present Group', data: presentData, backgroundColor: '#3DD68C', borderRadius: 4 },
+        { label: 'Absent Group', data: absentData, backgroundColor: '#F2495C', borderRadius: 4 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: gridOptions }, x: { grid: { display: false } } } }
+  });
+
+  // 4. WFH BAR CHART
+  const ctxWfh = document.getElementById('wfhChart').getContext('2d');
+  wfhChartInstance = new Chart(ctxWfh, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{ label: 'WFH Count', data: wfhData, backgroundColor: '#4EA1FF', borderRadius: 4 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: gridOptions }, x: { grid: { display: false } } } }
+  });
+}
+
+// 5. DETAILED DATA TABLE WITH ROW & COL TOTALS
+function renderDetailedTable(byDateData) {
+  let sumP = 0, sumHD = 0, sumWFH = 0, sumLeave = 0, sumWO = 0, sumA = 0, sumMissing = 0, grandTotal = 0;
+
+  let html = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Present (P)</th>
+            <th>Half Day (HD)</th>
+            <th>WFH</th>
+            <th>Leave</th>
+            <th>Week Off (WO)</th>
+            <th>Absent (A)</th>
+            <th>Missing</th>
+            <th style="color:var(--accent);">Row Total</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  byDateData.forEach(d => {
+    const rowTotal = d.present + d.hd + d.wfh + d.leave + d.wo + d.absent + d.pendingUnresolved;
+    
+    sumP += d.present; sumHD += d.hd; sumWFH += d.wfh; sumLeave += d.leave; 
+    sumWO += d.wo; sumA += d.absent; sumMissing += d.pendingUnresolved; grandTotal += rowTotal;
+
+    html += `
+      <tr>
+        <td style="font-family:var(--mono);">${cleanDate(d.date)}</td>
+        <td>${d.present}</td>
+        <td>${d.hd}</td>
+        <td>${d.wfh}</td>
+        <td>${d.leave}</td>
+        <td>${d.wo}</td>
+        <td>${d.absent}</td>
+        <td>${d.pendingUnresolved}</td>
+        <td style="font-weight:bold; color:var(--accent);">${rowTotal}</td>
+      </tr>
+    `;
+  });
+
+  // ADD COLUMN TOTALS AT THE END
+  html += `
+        <tr style="background:var(--panel-2); font-weight:bold; font-size:14px;">
+          <td>GRAND TOTAL</td>
+          <td>${sumP}</td>
+          <td>${sumHD}</td>
+          <td>${sumWFH}</td>
+          <td>${sumLeave}</td>
+          <td>${sumWO}</td>
+          <td>${sumA}</td>
+          <td>${sumMissing}</td>
+          <td style="color:var(--accent);">${grandTotal}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>`;
+
+  document.getElementById('detailedTableWrap').innerHTML = html;
+}
+
+function renderProgressBars(elementId, dataArray, labelKey) {
+  document.getElementById(elementId).innerHTML = dataArray.map(e => {
+    const rate = ((e.present / Math.max(1, e.total)) * 100).toFixed(0);
+    return `
+    <div class="bar-row">
+      <div class="bar-label">${escapeHtml(e[labelKey] || 'Unknown')}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${rate}%; background: ${rate < 75 ? 'var(--red)' : 'var(--accent)'}"></div></div>
+      <div class="bar-val" style="width:70px;">${rate}% (${e.present})</div>
+    </div>`;
+  }).join('') || '<div class="empty-state">No data available.</div>';
 }
 
 // ============ EXPORT ============
