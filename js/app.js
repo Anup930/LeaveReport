@@ -78,30 +78,83 @@ async function boot() {
 }
 
 // ============ DASHBOARD ============
+// async function loadDashboard() {
+//   const wrap = document.getElementById('dashboardBody');
+//   wrap.innerHTML = '<div class="empty-state">Loading compliance dataâ€¦</div>';
+//   try {
+//     const d = await API.getDashboard(state.date);
+//     state.dashboard = d;
+//     state.selected.clear();
+//     renderKpis(d.summary);
+//     renderSections(d);
+//   } catch (e) {
+//     wrap.innerHTML = '<div class="empty-state">Failed to load: ' + e.message + '</div>';
+//   }
+// }
+
+// function renderKpis(s) {
+//   const box = document.getElementById('kpiRow');
+//   const items = [
+//     ['Active Employees', s.totalActive, 'var(--ink-dim)'],
+//     ['Pending Compliance', s.pending, 'var(--red)'],
+//     ['Resolved Today', s.resolved, 'var(--accent)'],
+//     ['Present', s.present, 'var(--green)'],
+//     ['On Leave', s.onLeave, 'var(--purple)'],
+//     ['Week Off', s.weekOff, 'var(--slate)']
+//   ];
+//   box.innerHTML = items.map(([l, n, c]) =>
+//     `<div class="kpi" style="--rail:${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`
+//   ).join('');
+// }
+
+
+// ============ DASHBOARD ============
 async function loadDashboard() {
   const wrap = document.getElementById('dashboardBody');
-  wrap.innerHTML = '<div class="empty-state">Loading compliance dataâ€¦</div>';
+  wrap.innerHTML = '<div class="empty-state">Loading compliance data…</div>';
   try {
     const d = await API.getDashboard(state.date);
     state.dashboard = d;
     state.selected.clear();
-    renderKpis(d.summary);
+    
+    // Yahan sirf d.summary ki jagah pura 'd' pass kar rahe hain
+    renderKpis(d); 
     renderSections(d);
   } catch (e) {
     wrap.innerHTML = '<div class="empty-state">Failed to load: ' + e.message + '</div>';
   }
 }
 
-function renderKpis(s) {
+function renderKpis(d) {
   const box = document.getElementById('kpiRow');
+  const s = d.summary;
+
+  // 1. Pehle 3 fixed cards jo humesha dikhenge
   const items = [
     ['Active Employees', s.totalActive, 'var(--ink-dim)'],
     ['Pending Compliance', s.pending, 'var(--red)'],
-    ['Resolved Today', s.resolved, 'var(--accent)'],
-    ['Present', s.present, 'var(--green)'],
-    ['On Leave', s.onLeave, 'var(--purple)'],
-    ['Week Off', s.weekOff, 'var(--slate)']
+    ['Resolved Today', s.resolved, 'var(--accent)']
   ];
+
+  // 2. Col G (Status) se unique values aur unka count nikalna
+  const statusCounts = {};
+  d.all.forEach(r => {
+    if (r.Status) { // Sirf unhe count karenge jinka status assigned hai
+      statusCounts[r.Status] = (statusCounts[r.Status] || 0) + 1;
+    }
+  });
+
+  // 3. Dynamic cards ko items array mein append karna
+  Object.keys(statusCounts).sort().forEach(st => {
+    // STATUS_META se color aur label uthayega, agar nahi mila to default set karega
+    const meta = STATUS_META[st] || { label: st, color: 'var(--slate)' };
+    items.push([meta.label, statusCounts[st], meta.color]);
+  });
+
+  // 4. CSS Grid ko dynamically adjust karna taaki naye cards fit ho sakein
+  box.style.gridTemplateColumns = `repeat(auto-fit, minmax(180px, 1fr))`;
+
+  // 5. Final HTML render karna
   box.innerHTML = items.map(([l, n, c]) =>
     `<div class="kpi" style="--rail:${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`
   ).join('');
