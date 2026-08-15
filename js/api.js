@@ -26,5 +26,6 @@ const API = {
   getFilters: () => API._post('getFilters'),
   getTrends: (fromDate, toDate) => API._post('getTrends', { fromDate, toDate }),
   getChronicOffenders: (days, threshold) => API._post('getChronicOffenders', { days, threshold }),
+  getEmployeeAttendance: (empId, fromDate, toDate) => API._post('getEmployeeAttendance', { empId, fromDate, toDate }),
   exportDay: (date) => API._post('exportDay', { date })
 };
