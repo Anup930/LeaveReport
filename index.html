@@ -33,20 +33,26 @@
   <div class="sidebar">
     <div class="brand"><span>GRETEX GROUP</span><b>Compliance</b></div>
 
-    <div class="nav-item active" data-tab="dashboard" onclick="showTab('dashboard')"><span class="dot"></span> Dashboard</div>
+    <div class="nav-item active" data-tab="dashboard" onclick="showTab('dashboard')"><span class="dot"></span> Compliance</div>
+    <div class="nav-item" data-tab="showleave" onclick="showTab('showleave')"><span class="dot"></span> Show Leave</div>
     <div class="nav-item" data-tab="leave" onclick="showTab('leave')"><span class="dot"></span> Leave Schedule</div>
     <div class="nav-item" data-tab="empmaster" onclick="showTab('empmaster')"><span class="dot"></span> Employee Master</div>
     <div class="nav-item" data-tab="trends" onclick="showTab('trends')"><span class="dot"></span> Trends &amp; Reports</div>
 
     <div class="sidebar-foot">
       <div id="userTag">—</div>
-      <div style="margin-top:8px; cursor:pointer; color:var(--red);" onclick="logout()">Sign out</div>
+      <div style="margin-top:12px; display:flex; gap:6px;">
+        <button class="btn btn-sm" id="themeBtnDark" onclick="setTheme('dark')" style="flex:1;" title="Dark Theme">🌙</button>
+        <button class="btn btn-sm" id="themeBtnSystem" onclick="setTheme('system')" style="flex:1;" title="System Theme">💻</button>
+        <button class="btn btn-sm" id="themeBtnLight" onclick="setTheme('light')" style="flex:1;" title="Light Theme">☀️</button>
+      </div>
+      <div style="margin-top:12px; cursor:pointer; color:var(--red); padding-bottom:4px;" onclick="logout()">Sign out</div>
     </div>
   </div>
 
   <div class="main">
 
-    <!-- DASHBOARD VIEW -->
+    <!-- DASHBOARD VIEW (NOW COMPLIANCE) -->
     <div class="view" id="view-dashboard">
       <div class="topbar">
         <div>
@@ -62,7 +68,19 @@
 
       <div class="kpi-row" id="kpiRow"></div>
       <div class="chip-row" id="filterChips"></div>
+      <div class="chip-row" id="advancedFilterChips" style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); display:flex; flex-wrap:wrap; gap:8px; align-items:center;"></div>
       <div id="dashboardBody"><div class="empty-state">Loading…</div></div>
+    </div>
+
+    <!-- SHOW LEAVE VIEW -->
+    <div class="view hidden" id="view-showleave">
+      <div class="topbar">
+        <div><h1>Show Leave</h1><div class="sub">Click on an employee to view their attendance and leave calendar.</div></div>
+        <div>
+          <input type="text" id="showLeaveSearch" placeholder="Search employee..." oninput="renderShowLeaveCards(this.value)" style="width: 260px;">
+        </div>
+      </div>
+      <div id="showLeaveList"></div>
     </div>
 
     <!-- LEAVE VIEW -->
@@ -76,8 +94,11 @@
           <div class="field"><label>Employee</label><select id="leaveEmpSelect"></select></div>
           <div class="field"><label>From</label><input type="date" id="leaveFrom"></div>
           <div class="field"><label>To</label><input type="date" id="leaveTo"></div>
-          <div class="field"><label>Reason</label><input type="text" id="leaveReason" placeholder="e.g. Annual leave, Medical..."></div>
-          <button class="btn btn-primary" onclick="submitLeave()">Schedule Leave</button>
+          <div>
+            <label>Reason / Remarks</label>
+            <input type="text" id="leaveReason" placeholder="e.g. Medical, Vacation...">
+          </div>
+          <button class="btn btn-primary" onclick="submitLeave(this)" style="margin-top:24px; width:100%; justify-content:center;">Schedule Leave</button>
         </div>
       </div>
 
@@ -88,16 +109,9 @@
     <div class="view hidden" id="view-empmaster">
       <div class="topbar">
         <div><h1>Employee Master</h1><div class="sub">Active employees are checked for compliance every day.</div></div>
-      </div>
-
-      <div class="table-wrap" style="padding:16px; margin-bottom:22px;">
-        <div style="display:grid; grid-template-columns: 1fr 1.6fr 1.6fr 1fr 1fr auto; gap:10px; align-items:end;">
-          <div class="field"><label>Emp ID</label><input type="text" id="newEmpId"></div>
-          <div class="field"><label>Name</label><input type="text" id="newEmpName"></div>
-          <div class="field"><label>Email</label><input type="text" id="newEmpEmail"></div>
-          <div class="field"><label>Entity</label><input type="text" id="newEmpEntity" placeholder="GSBL, GCSL..."></div>
-          <div class="field"><label>Department</label><input type="text" id="newEmpDept"></div>
-          <button class="btn btn-primary" onclick="addEmployeeSubmit()">Add Employee</button>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <button class="btn btn-primary" onclick="openAddEmpModal()">Add Employee</button>
+          <input type="text" id="empMasterSearch" placeholder="Search name, ID, email, dept..." oninput="renderEmpMasterList(this.value)" style="width: 260px;">
         </div>
       </div>
 
@@ -173,20 +187,71 @@
 
 <!-- ===== STATUS MODAL ===== -->
 <div class="modal-overlay hidden" id="statusModal">
-  <div class="modal">
-    <h3 id="modalEmpName">—</h3>
-    <div class="modal-sub" id="modalEmpMeta">—</div>
+  <div class="modal" style="width:650px; max-width:95vw;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+      <div>
+        <h3 id="modalEmpName">—</h3>
+        <div class="modal-sub" id="modalEmpMeta">—</div>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="openAttendanceCalendar()" style="margin-bottom:16px;">📅 View Attendance</button>
+    </div>
+    
+    <!-- TODAY'S WORK MODE TOGGLE -->
+    <div style="background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:16px; display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div style="font-size:11px; font-weight:700; color:var(--ink-dim); letter-spacing:0.5px;">BASE WORK TYPE</div>
+          <div id="modalBaseWorkType" style="font-weight:600; font-size:13px; margin-top:2px;">WFO</div>
+        </div>
+        <div>
+          <div style="font-size:11px; font-weight:700; color:var(--ink-dim); letter-spacing:0.5px; text-align:right; margin-bottom:4px;">ACTUAL MODE TODAY</div>
+          <div style="display:flex; background:var(--panel); border:1px solid var(--line); border-radius:6px; overflow:hidden;">
+            <label style="cursor:pointer; padding:4px 12px; font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px; margin:0; user-select:none;">
+              <input type="radio" name="todayMode" value="WFO" checked style="margin:0; accent-color:var(--accent);" onchange="handleTodayModeChange()"> WFO
+            </label>
+            <label style="cursor:pointer; padding:4px 12px; font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px; margin:0; border-left:1px solid var(--line); user-select:none;">
+              <input type="radio" name="todayMode" value="WFH" style="margin:0; accent-color:var(--accent);" onchange="handleTodayModeChange()"> WFH
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <!-- WFH Approval UI -->
+      <div id="wfhApprovalBox" class="hidden" style="border-top:1px dashed var(--line); padding-top:12px; margin-top:4px;">
+        <div style="font-size:12px; font-weight:700; color:var(--ink-dim); margin-bottom:8px;">WFH APPROVAL DETAILS (WFO Base)</div>
+        <div style="display:flex; flex-direction:column; gap:8px; font-size:13px;">
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="wfhApproveHOD" onchange="handleHODToggle()"> Approved from HOD/Manager</label>
+          <div id="wfhApproveNameBox" class="hidden" style="padding-left:24px;">
+            <input type="text" id="wfhApproveName" placeholder="Approver Name (Optional)" style="padding:4px 8px; font-size:12px; width:200px;">
+          </div>
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="wfhApproveArvind"> Approved from Arvind Sir</label>
+        </div>
+      </div>
+      
+      <!-- WFO Verify UI -->
+      <div id="wfoVerifyBox" class="hidden" style="border-top:1px dashed var(--line); padding-top:12px; margin-top:4px;">
+        <div style="font-size:12px; font-weight:700; color:var(--ink-dim); margin-bottom:8px;">WFO VERIFICATION (WFH Base)</div>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="wfoVerified"> Did you verify the physical presence?</label>
+      </div>
+    </div>
+
     <div class="field">
-      <label>Status</label>
+      <label>STATUS</label>
       <div class="status-pick" id="statusPicker"></div>
     </div>
+    
+    <div id="statusDynamicForm" style="margin-bottom:16px;"></div>
+
     <div class="field">
-      <label>Remark</label>
-      <textarea id="modalRemark" rows="3" placeholder="e.g. Working from HD site, approved by manager..."></textarea>
+      <label>REMARK (Optional / Additional info)</label>
+      <textarea id="statusRemark" rows="2" placeholder="e.g. Working from HD site, approved by manager..."></textarea>
     </div>
-    <div class="modal-actions">
+    
+    <div id="statusModalAlert" style="display:none; background:var(--red); color:#fff; padding:10px 14px; border-radius:6px; margin-bottom:16px; font-size:13px; font-weight:600;"></div>
+
+    <div style="text-align:right;">
       <button class="btn" onclick="closeStatusModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveStatus()">Save Status</button>
+      <button class="btn btn-primary" onclick="saveStatus(this)">Save Status</button>
     </div>
   </div>
 </div>
@@ -232,6 +297,120 @@
     <div class="modal-actions">
       <button class="btn" onclick="closeUploadModal()">Cancel</button>
       <button class="btn btn-primary" id="uploadConfirmBtn" onclick="confirmUpload()">Import &amp; Compute Compliance</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ATTENDANCE CALENDAR MODAL ===== -->
+<div class="modal-overlay hidden" id="attendanceCalendarModal">
+  <div class="modal" style="width: 900px; max-width: 96vw; max-height: 90vh;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+      <div>
+        <h3 id="calEmpName">—</h3>
+        <div class="modal-sub" id="calEmpMeta">—</div>
+      </div>
+      <button class="btn" onclick="closeAttendanceCalendar()">✕ Close</button>
+    </div>
+
+    <div class="calendar-controls">
+      <button class="btn btn-sm" onclick="changeCalendarMonth(-1)">&lt; Prev</button>
+      <div id="calMonthYear" class="calendar-title">August 2026</div>
+      <button class="btn btn-sm" onclick="changeCalendarMonth(1)">Next &gt;</button>
+    </div>
+
+    <div class="calendar-grid" id="calendarGrid">
+      <!-- Generated via JS -->
+    </div>
+  </div>
+</div>
+
+<!-- ===== EMP DETAILS MODAL ===== -->
+<div class="modal-overlay hidden" id="empDetailsModal">
+  <div class="modal" style="width: 400px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+      <div>
+        <h3 id="detEmpName" style="display:flex; align-items:center; gap:8px;">—</h3>
+        <div class="modal-sub" id="detEmpId">—</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" onclick="openEditEmpModal()" style="padding:6px 12px; font-size:12px;">✏️ Edit</button>
+        <button class="btn" onclick="closeEmpDetailsModal()">✕</button>
+      </div>
+    </div>
+    
+    <div style="background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:20px; display:flex; flex-direction:column; gap:12px;">
+      <div>
+        <label>Email Address</label>
+        <div id="detEmpEmail" style="font-weight:600; color:var(--ink);">—</div>
+      </div>
+      <div style="display:flex; gap:16px;">
+        <div style="flex:1;">
+          <label>Entity</label>
+          <div id="detEmpEntity" style="font-weight:600; color:var(--ink);">—</div>
+        </div>
+        <div style="flex:1;">
+          <label>Department</label>
+          <div id="detEmpDept" style="font-weight:600; color:var(--ink);">—</div>
+        </div>
+      </div>
+      <div>
+        <label>Current Status</label>
+        <div><span id="detEmpStatusBadge"></span></div>
+      </div>
+    </div>
+
+    <button class="btn" id="detEmpToggleBtn" style="width:100%; justify-content:center; padding:12px; font-size:14px;" onclick="toggleEmpDetailsStatus(this)">Mark Deactive</button>
+  </div>
+</div>
+
+<!-- ADD / EDIT EMP MODAL -->
+<div class="modal-overlay hidden" id="addEmpModal">
+  <div class="modal" style="width:480px;">
+    <div class="modal-head">
+      <div>
+        <h3 id="aeModalTitle">Add New Employee</h3>
+        <div class="modal-sub" id="aeModalSub">Enter details to register a new employee.</div>
+      </div>
+      <button class="btn" onclick="closeAddEmpModal()">✕</button>
+    </div>
+    
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; gap:12px;">
+        <div class="field" style="flex:1;"><label>EMP ID *</label><input type="text" id="aeEmpId" placeholder="e.g. 1042"></div>
+        <div class="field" style="flex:2;"><label>NAME *</label><input type="text" id="aeName" placeholder="Full Name"></div>
+      </div>
+      <div class="field"><label>EMAIL</label><input type="email" id="aeEmail" placeholder="Email Address"></div>
+      <div style="display:flex; gap:12px;">
+        <div class="field" style="flex:1;"><label>ENTITY</label><input type="text" id="aeEntity" placeholder="GSBL, GCSL..."></div>
+        <div class="field" style="flex:1;"><label>DEPARTMENT</label><input type="text" id="aeDept" placeholder="e.g. Admin"></div>
+      </div>
+      <div class="field">
+        <label>WORK TYPE</label>
+        <select id="aeWorkType" onchange="handleWorkTypeChange()">
+          <option value="WFO">WFO (Work From Office)</option>
+          <option value="WFH">WFH (Work From Home)</option>
+          <option value="Hybrid">Hybrid</option>
+        </select>
+      </div>
+      
+      <div id="aeHybridDays" class="hidden" style="background:var(--panel-2); padding:12px; border-radius:6px; border:1px solid var(--line);">
+        <label style="font-size:12px; font-weight:700; color:var(--ink-dim); margin-bottom:8px; display:block;">SELECT WFH DAYS *</label>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; font-size:13px;">
+          <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" value="Mon" class="ae-day"> Mon</label>
+          <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" value="Tue" class="ae-day"> Tue</label>
+          <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" value="Wed" class="ae-day"> Wed</label>
+          <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" value="Thu" class="ae-day"> Thu</label>
+          <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" value="Fri" class="ae-day"> Fri</label>
+          <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" value="Sat" class="ae-day"> Sat</label>
+          <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" value="Sun" class="ae-day"> Sun</label>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:24px;">
+      <button class="btn" onclick="closeAddEmpModal()">Cancel</button>
+      <button class="btn btn-primary" id="aeBtnAddAnother" onclick="submitAddEmployee(this, true)" style="background:var(--panel-2); color:var(--ink); border:1px solid var(--line);">Save & Add Another</button>
+      <button class="btn btn-primary" id="aeBtnSave" onclick="submitAddEmployee(this, false)">Save & Close</button>
     </div>
   </div>
 </div>
