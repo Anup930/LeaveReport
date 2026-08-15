@@ -1,6 +1,7 @@
 // ============ CONFIG ============
 // Paste your deployed Apps Script Web App URL below (ends in /exec)
-const API_URL = 'https://script.google.com/macros/s/AKfycbzYW8vl5oTSH9Aude6bxCt_aTM9ZENGiekIFvrmC3Y7f1NONobvdjZOo83afqn-X1kB6Q/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzxzNvxxEmtZo8mPjn2gbTKZ_ob9t-niUW4CVaMasEC5GYcoXS1yXtUckS-7AekaRx3mA/exec';
+
 
 
 const STATUS_META = {
@@ -12,4 +13,4 @@ const STATUS_META = {
   WO:    { label: 'Week Off',  color: '#8A93A6' }
 };
 
-const STATUS_LIST = ['P', 'A', 'HD', 'WFH', 'Leave', 'WO'];
+const STATUS_LIST = ['P', 'A', 'HD', 'Leave', 'WO'];
