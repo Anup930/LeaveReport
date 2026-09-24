@@ -59,7 +59,7 @@ async function doLogin() {
       toast(res.error || 'Login failed', true);
     }
   } catch (e) {
-    toast('Cannot reach server. Check API_URL in config.js', true);
+    toast(e.message || 'Cannot reach server. Check API_URL in config.js', true);
   }
   btn.disabled = false; btn.textContent = 'Sign In';
 }
@@ -172,6 +172,7 @@ function applyFilters(rows) {
       if (state.filters.advanced.has('status_HD') && r.Status === 'HD') passAdv = true;
       if (state.filters.advanced.has('status_Leave') && r.Status === 'Leave') passAdv = true;
       if (state.filters.advanced.has('status_WO') && r.Status === 'WO') passAdv = true;
+      if (state.filters.advanced.has('status_Holiday') && (r.Status === 'Holiday' || r.Status === 'H')) passAdv = true;
       
       if (!passAdv) return false;
     }
@@ -184,7 +185,8 @@ function renderSections(d) {
   const wrap = document.getElementById('dashboardBody');
   const pending = applyFilters(d.pending);
   const present = applyFilters(d.present);
-  const resolved = applyFilters(d.resolved);
+  const resolved = applyFilters(d.resolved.filter(r => r.Status !== 'Holiday' && r.Status !== 'H'));
+  const holiday = applyFilters(d.all.filter(r => r.Status === 'Holiday' || r.Status === 'H'));
   const onLeave = applyFilters(d.onLeave);
   const weekOff = applyFilters(d.weekOff);
 
@@ -201,6 +203,7 @@ function renderSections(d) {
   html += section('⚠️ Pending Compliance', pending, true);
   html += section('✅ Present (editable)', present, false);
   html += section('📝 Resolved Today', resolved, false);
+  html += section('🎉 Holiday', holiday, false);
   html += section('🌴 On Leave', onLeave, false);
   html += section('🛋️ Week Off', weekOff, false);
 
@@ -259,7 +262,8 @@ const ADVANCED_OPTIONS = [
   { id: 'status_A', label: 'Absent' },
   { id: 'status_HD', label: 'Half Day' },
   { id: 'status_Leave', label: 'Leave' },
-  { id: 'status_WO', label: 'Week Off' }
+  { id: 'status_WO', label: 'Week Off' },
+  { id: 'status_Holiday', label: 'Holiday' }
 ];
 
 function renderFilterChips() {
@@ -375,9 +379,11 @@ window.handleHODToggle = function() {
 
 function renderStatusPicker(elId, current) {
   const box = document.getElementById(elId);
-  box.innerHTML = STATUS_LIST.map(s =>
-    `<div class="opt ${s === current ? 'active' : ''}" style="--c:${STATUS_META[s].color}" data-status="${s}" onclick="pickStatus('${elId}', '${s}')">${s} · ${STATUS_META[s].label}</div>`
-  ).join('');
+  box.innerHTML = STATUS_LIST.map(s => {
+    const meta = STATUS_META[s] || { label: s, color: 'var(--accent)' };
+    const label = (s === meta.label) ? s : `${s} · ${meta.label}`;
+    return `<div class="opt ${s === current ? 'active' : ''}" style="--c:${meta.color}" data-status="${s}" onclick="pickStatus('${elId}', '${s}')">${label}</div>`;
+  }).join('');
   box.dataset.selected = current || '';
 }
 window.renderDynamicSubForm = function() {
@@ -418,12 +424,32 @@ function pickStatus(elId, s) {
   const box = document.getElementById(elId);
   box.dataset.selected = s;
   [...box.children].forEach(c => c.classList.toggle('active', c.dataset.status === s));
+  
+  if (elId === 'bulkStatusPicker') {
+    const bulkRemark = document.getElementById('bulkRemark');
+    if ((s === 'Holiday' || s === 'H') && bulkRemark) {
+      bulkRemark.placeholder = 'Enter Holiday Name (e.g. Diwali, Holi)...';
+    } else if (bulkRemark) {
+      bulkRemark.placeholder = '';
+    }
+    return;
+  }
+
   const alertEl = document.getElementById('statusModalAlert');
   if(alertEl) alertEl.style.display = 'none';
   
   // Render sub-options
   const dynamicForm = document.getElementById('statusDynamicForm');
-  if (STATUS_SUBCATEGORIES[s]) {
+  if (s === 'Holiday' || s === 'H') {
+    let html = `<div style="background:var(--panel-2); padding:12px; border-radius:8px; border:1px solid var(--line);">`;
+    html += `<div style="font-size:12px; color:var(--ink-dim); font-weight:700; margin-bottom:8px;">HOLIDAY DETAILS</div>`;
+    html += `<div class="field">
+      <label>HOLIDAY NAME *</label>
+      <input type="text" id="holidayNameInput" placeholder="e.g. Diwali, Independence Day, Eid, etc." style="width:100%; margin-top:4px;">
+    </div>`;
+    html += `</div>`;
+    dynamicForm.innerHTML = html;
+  } else if (STATUS_SUBCATEGORIES[s]) {
     const opts = STATUS_SUBCATEGORIES[s];
     let html = `<div style="background:var(--panel-2); padding:12px; border-radius:8px; border:1px solid var(--line);">`;
     html += `<div style="font-size:12px; color:var(--ink-dim); font-weight:700; margin-bottom:8px;">SELECT REASON / DETAILS</div>`;
@@ -459,7 +485,20 @@ async function saveStatus(btn) {
   let compiledRemark = '';
   const subOptionEl = document.querySelector('input[name="statusSub"]:checked');
   
-  if (STATUS_SUBCATEGORIES[status]) {
+  if (status === 'Holiday' || status === 'H') {
+    const hName = document.getElementById('holidayNameInput')?.value.trim();
+    if (!hName) {
+      const alertEl = document.getElementById('statusModalAlert');
+      if (alertEl) {
+        alertEl.textContent = 'Please enter the Holiday Name.';
+        alertEl.style.display = 'block';
+      } else {
+        toast('Please enter the Holiday Name', true);
+      }
+      return;
+    }
+    compiledRemark = `Holiday: ${hName}`;
+  } else if (STATUS_SUBCATEGORIES[status]) {
     if (!subOptionEl) {
       const alertEl = document.getElementById('statusModalAlert');
       alertEl.textContent = `Please select a reason/detail option for ${status}.`;
@@ -556,8 +595,14 @@ function openBulkModal() {
 function closeBulkModal() { document.getElementById('bulkModal').classList.add('hidden'); }
 async function saveBulkStatus() {
   const status = document.getElementById('bulkStatusPicker').dataset.selected;
-  const remark = document.getElementById('bulkRemark').value.trim();
+  let remark = document.getElementById('bulkRemark').value.trim();
   if (!status) return toast('Pick a status', true);
+  if ((status === 'Holiday' || status === 'H') && !remark) {
+    return toast('Please enter the Holiday Name in the Remark box', true);
+  }
+  if ((status === 'Holiday' || status === 'H') && !remark.toLowerCase().startsWith('holiday:')) {
+    remark = 'Holiday: ' + remark;
+  }
   try {
     const res = await API.bulkUpdateStatus(state.date, [...state.selected], status, remark, state.user.displayName);
     toast(res.updated + ' records updated');
@@ -764,15 +809,21 @@ async function toggleEmpDetailsStatus(btn) {
   if (!currentDetEmp) return;
   const newStatus = currentDetEmp.Status === 'Active' ? 'Inactive' : 'Active';
   await runBtnTask(btn, async () => {
-    await API.updateEmployee({ empId: currentDetEmp.EmpID, status: newStatus });
+    await API.updateEmployee({ empId: currentDetEmp.EmpID, status: newStatus, date: state.date });
     toast('Updated employee status');
+    currentDetEmp.Status = newStatus;
+    const empInMaster = state.empMaster.find(e => String(e.EmpID) === String(currentDetEmp.EmpID));
+    if (empInMaster) empInMaster.Status = newStatus;
     closeEmpDetailsModal();
     loadEmpMasterTab();
   });
 }
 async function toggleEmpStatus(empId, current) {
-  await API.updateEmployee({ empId, status: current === 'Active' ? 'Inactive' : 'Active' });
-  toast('Updated');
+  const newStatus = current === 'Active' ? 'Inactive' : 'Active';
+  await API.updateEmployee({ empId, status: newStatus, date: state.date });
+  toast('Updated employee status');
+  const empInMaster = state.empMaster.find(e => String(e.EmpID) === String(empId));
+  if (empInMaster) empInMaster.Status = newStatus;
   loadEmpMasterTab();
 }
 let isEditMode = false;
@@ -880,7 +931,7 @@ async function submitAddEmployee(btn, addAnother) {
   
   await runBtnTask(btn, async () => {
     if (isEditMode) {
-      await API.updateEmployee({ empId, name, email, entity, department, workType });
+      await API.updateEmployee({ empId, name, email, entity, department, workType, date: state.date });
       toast('Employee updated');
       
       const existing = state.empMaster.find(e => String(e.EmpID) === empId);
@@ -892,7 +943,7 @@ async function submitAddEmployee(btn, addAnother) {
         existing['Work Type'] = workType;
       }
     } else {
-      await API.addEmployee({ empId, name, email, entity, department, workType });
+      await API.addEmployee({ empId, name, email, entity, department, workType, status: 'Active', date: state.date });
       toast('Employee added');
       
       state.empMaster.push({
@@ -1303,6 +1354,11 @@ async function renderCalendar() {
         else if (rec.Status === 'WFH') { cls = 'wfh'; label = 'Present (Remote In)'; }
         else if (rec.Status === 'Leave') { cls = 'leave'; label = 'Leave'; sub = ''; }
         else if (rec.Status === 'WO') { cls = 'wo'; label = 'Week Off'; sub = ''; }
+        else if (rec.Status === 'Holiday' || rec.Status === 'H') {
+          cls = 'holiday';
+          label = rec.Remark && rec.Remark.includes('Holiday:') ? rec.Remark.split('|')[0].trim() : 'Holiday';
+          sub = '';
+        }
         
         eventHtml = `<div class="event ${cls}">${label} ${sub ? `<div class="event-sub">${sub}</div>` : ''}</div>`;
       }
