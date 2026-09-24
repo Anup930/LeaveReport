@@ -328,6 +328,7 @@ tr:hover td{ background: var(--panel-2); }
 .calendar-cell .event.wfh { background: var(--blue); color: white; }
 .calendar-cell .event.leave { background: var(--purple); color: white; }
 .calendar-cell .event.wo { background: var(--ink-dim); color: white; }
+.calendar-cell .event.holiday { background: #E056FD; color: white; }
 .calendar-cell .event-sub { font-size: 9.5px; opacity: 0.8; font-weight: normal; margin-top: 2px; }
 
 @media (max-width: 900px){
